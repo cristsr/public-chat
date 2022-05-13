@@ -1,28 +1,71 @@
-use actix::{fut, prelude::*};
+use actix::prelude::*;
 use actix_web_actors::ws;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
+use crate::message::{Connect, Disconnect, Join, Message, RoomMessage};
 use crate::server;
 
-#[derive(Default)]
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug)]
 pub struct WsSession {
-    pub id: String,
+    pub id: Uuid,
     pub hb: Instant,
-    pub name: Option(String),
-    pub room: String,
-    pub addr: Addr<server::ChatServer>,
+    pub name: Option<String>,
+    pub room: Option<String>,
+    pub server: Addr<server::ChatServer>,
 }
 
 impl WsSession {
-    pub fn join_room(&mut self, room: &str) {}
+    /**
+     * Send ping to client every 5 seconds
+     */
+    pub fn heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
+        ctx.run_interval(HEARTBEAT_INTERVAL, |session, ctx| {
+            if Instant::now().duration_since(session.hb) > CLIENT_TIMEOUT {
+                log::info!("Client {} is gone, disconnecting!", session.id);
+
+                // Remove from server
+                session.server.do_send(Disconnect { id: session.id });
+
+                // Stop actor
+                ctx.stop();
+
+                //
+                return;
+            }
+
+            ctx.ping(b"ping");
+        });
+    }
+
+    pub fn join_room(&self, room: String, ctx: &mut ws::WebsocketContext<Self>) {
+        log::info!("{} join room {}", self.id.to_string(), room);
+
+        self.server.do_send(Join {
+            id: self.id,
+            name: self.name.clone().unwrap_or("RandomName".to_string()),
+            room: room.to_owned(),
+        });
+    }
 }
 
 impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        log::info!("Started");
+        log::info!("Started, id: {}", self.id);
+
+        // Start process on session start
+        self.heartbeat(ctx);
+
+        self.server.do_send(Connect {
+            id: self.id,
+            addr: ctx.address().recipient(),
+        });
     }
 
     fn stopped(&mut self, ctx: &mut Self::Context) {
@@ -30,30 +73,64 @@ impl Actor for WsSession {
     }
 }
 
+impl Handler<Message> for WsSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: Message, ctx: &mut Self::Context) -> Self::Result {
+        log::info!("Message received {:?}", msg);
+        ctx.text(msg.0);
+    }
+}
+
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         let message = match msg {
             Ok(message) => message,
-            Err(err) => {
+            Err(e) => {
+                log::error!("{:?}", e);
                 ctx.stop();
                 return;
             }
         };
 
         match message {
+            ws::Message::Ping(msg) => {
+                self.hb = Instant::now();
+                ctx.pong(b"pong");
+            }
+            ws::Message::Pong(_) => {
+                self.hb = Instant::now();
+            }
             ws::Message::Text(text) => {
-                log::info!("Text: {}", text);
-
                 // let json: MyObj = serde_json::from_slice::<MyObj>((&text).as_ref()).unwrap();
+                // parse json
+                let value: Value = match serde_json::from_str(&text) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        ctx.text(json!({ "error": e.to_string() }).to_string());
+                        return;
+                    }
+                };
 
-                let v: Value = serde_json::from_str(&text).unwrap();
-
-                let event = v["event"].to_string()?;
+                let event: &str = value["event"].as_str().unwrap();
+                let data: Value = value["data"].clone();
 
                 match event {
                     "join" => {
-                        self.join_room(&v["data"].to_string()?);
-                        log::info!("Join");
+                        let room = String::from(data.as_str().unwrap_or(""));
+                        self.join_room(room, ctx);
+                    }
+                    "roomMessage" => {
+                        let room = String::from(data["room"].as_str().unwrap_or(""));
+                        let msg = String::from(data["msg"].as_str().unwrap_or(""));
+
+                        self.server.do_send(RoomMessage {
+                            id: self.id.clone(),
+                            name: self.name.clone().unwrap_or("RandomName".to_string()),
+                            room,
+                            msg,
+                        });
                     }
                     "leave" => {
                         log::info!("leave");
@@ -61,9 +138,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                     "asdf" => {
                         log::info!("asdf");
                     }
+                    _ => {}
                 }
 
-                log::info!("event {} data {:?}", v["event"], v["data"]);
+                log::info!("event {} data {:?}", value["event"], value["data"]);
             }
             _ => {}
         }

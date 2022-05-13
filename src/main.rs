@@ -1,4 +1,4 @@
-use actix::Addr;
+use actix::{Actor, Addr};
 use actix_web::{middleware::Logger, web, App, Error, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
 use log::log;
@@ -7,10 +7,11 @@ use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
+mod message;
 mod server;
 mod session;
 
-async fn configure_ws(
+async fn ws_route(
     req: HttpRequest,
     stream: web::Payload,
     srv: web::Data<Addr<server::ChatServer>>,
@@ -18,10 +19,12 @@ async fn configure_ws(
     let session = session::WsSession {
         id: Uuid::new_v4(),
         hb: Instant::now(),
-        room: "Main".to_owned(),
+        room: None,
         name: None,
-        addr: srv.get_ref().clone(),
+        server: srv.get_ref().clone(),
     };
+
+    log::info!("New session: {:?}", session);
 
     ws::start(session, &req, stream)
 }
@@ -32,13 +35,12 @@ async fn main() -> std::io::Result<()> {
 
     log::info!("Starting server...");
 
-    let app_state = Arc::new(AtomicUsize::new(0));
-
-    let ws_server = server::ChatServer::new(app_state.clone());
+    let chat_server = server::ChatServer::new().start();
 
     HttpServer::new(move || {
         App::new()
-            .service(web::resource("/ws").to(configure_ws))
+            .app_data(web::Data::new(chat_server.clone()))
+            .route("/ws", web::get().to(ws_route))
             .wrap(Logger::default())
     })
     .workers(2)
