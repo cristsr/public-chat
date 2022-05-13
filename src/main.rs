@@ -11,6 +11,10 @@ mod message;
 mod server;
 mod session;
 
+async fn index(req: HttpRequest) -> impl Responder {
+    "Hello world!"
+}
+
 async fn ws_route(
     req: HttpRequest,
     stream: web::Payload,
@@ -40,6 +44,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(chat_server.clone()))
+            .route("/", web::get().to(index))
             .route("/ws", web::get().to(ws_route))
             .wrap(Logger::default())
     })
