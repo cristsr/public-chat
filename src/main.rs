@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
+mod config;
 mod message;
 mod server;
 mod session;
@@ -21,7 +22,7 @@ async fn ws_route(
     srv: web::Data<Addr<server::ChatServer>>,
 ) -> Result<impl Responder, Error> {
     let session = session::WsSession {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().to_string(),
         hb: Instant::now(),
         room: None,
         name: None,

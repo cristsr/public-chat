@@ -2,9 +2,9 @@ use actix::prelude::*;
 use actix_web_actors::ws;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
-use crate::message::{Connect, Disconnect, Join, Message, RoomMessage};
+use crate::message::{Connect, Disconnect, Join, Leave, Message, RoomMessage};
 use crate::server;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -12,7 +12,7 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug)]
 pub struct WsSession {
-    pub id: Uuid,
+    pub id: String,
     pub hb: Instant,
     pub name: Option<String>,
     pub room: Option<String>,
@@ -29,7 +29,9 @@ impl WsSession {
                 log::info!("Client {} is gone, disconnecting!", session.id);
 
                 // Remove from server
-                session.server.do_send(Disconnect { id: session.id });
+                session.server.do_send(Disconnect {
+                    id: session.id.clone(),
+                });
 
                 // Stop actor
                 ctx.stop();
@@ -39,16 +41,6 @@ impl WsSession {
             }
 
             ctx.ping(b"ping");
-        });
-    }
-
-    pub fn join_room(&self, room: String, ctx: &mut ws::WebsocketContext<Self>) {
-        log::info!("{} join room {}", self.id.to_string(), room);
-
-        self.server.do_send(Join {
-            id: self.id,
-            name: self.name.clone().unwrap_or("RandomName".to_string()),
-            room: room.to_owned(),
         });
     }
 }
@@ -63,7 +55,7 @@ impl Actor for WsSession {
         self.heartbeat(ctx);
 
         self.server.do_send(Connect {
-            id: self.id,
+            id: self.id.clone(),
             addr: ctx.address().recipient(),
         });
     }
@@ -118,23 +110,34 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 
                 match event {
                     "join" => {
-                        let room = String::from(data.as_str().unwrap_or(""));
-                        self.join_room(room, ctx);
-                    }
-                    "roomMessage" => {
-                        let room = String::from(data["room"].as_str().unwrap_or(""));
-                        let msg = String::from(data["msg"].as_str().unwrap_or(""));
+                        let room: String = String::from(data["room"].as_str().unwrap_or(""));
 
-                        self.server.do_send(RoomMessage {
+                        log::info!("{} join room {}", self.id, room);
+
+                        self.server.do_send(Join {
                             id: self.id.clone(),
                             name: self.name.clone().unwrap_or("RandomName".to_string()),
-                            room,
-                            msg,
+                            room: room.clone(),
                         });
                     }
                     "leave" => {
-                        log::info!("leave");
+                        let room = String::from(data.as_str().unwrap_or(""));
+                        let id = self.id.clone();
+
+                        self.server.do_send(Leave { id, room });
                     }
+                    "roomMessage" => {
+                        let room = String::from(data["room"].as_str().unwrap_or(""));
+                        let message = String::from(data["msg"].as_str().unwrap_or(""));
+
+                        self.server.do_send(RoomMessage {
+                            id: self.id.clone(),
+                            name: self.name.clone().unwrap_or(String::from("")),
+                            room,
+                            message,
+                        });
+                    }
+
                     "asdf" => {
                         log::info!("asdf");
                     }

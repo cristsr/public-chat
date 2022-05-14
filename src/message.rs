@@ -1,11 +1,11 @@
 use actix::prelude::*;
-use uuid::Uuid;
+use std::collections::{BTreeSet, HashSet};
 
 /// New chat session is created
 #[derive(Message)]
 #[rtype(usize)]
 pub struct Connect {
-    pub id: Uuid,
+    pub id: String,
     pub addr: Recipient<Message>,
 }
 
@@ -13,7 +13,7 @@ pub struct Connect {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Join {
-    pub id: Uuid,
+    pub id: String,
     pub name: String,
     pub room: String,
 }
@@ -22,24 +22,35 @@ pub struct Join {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Leave {
-    pub id: Uuid,
+    pub id: String,
+    pub room: String,
+}
+
+/// Room
+#[derive(Hash, Eq, PartialEq, Debug, Message)]
+#[rtype(result = "()")]
+pub struct Room {
+    pub name: String,
+    pub people: usize,
+    pub id: String,
+    pub sockets: BTreeSet<String>,
 }
 
 /// Room Message
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct RoomMessage {
-    pub id: Uuid,
+    pub id: String,
     pub name: String,
     pub room: String,
-    pub msg: String,
+    pub message: String,
 }
 
 /// Session is disconnected
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Disconnect {
-    pub id: Uuid,
+    pub id: String,
 }
 
 /// Chat server sends this messages to session

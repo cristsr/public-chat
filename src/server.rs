@@ -4,21 +4,26 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use uuid::Uuid;
 
+use crate::config::generate_rooms;
 use crate::message;
-use crate::message::{Connect, Disconnect, Join, RoomMessage};
+use crate::message::{Connect, Disconnect, Join, Leave, Room, RoomMessage};
 
 #[derive(Debug)]
 pub struct ChatServer {
-    sockets: HashMap<Uuid, Recipient<message::Message>>,
-    rooms: HashMap<String, HashSet<Uuid>>,
+    sockets: HashMap<String, Recipient<message::Message>>,
+    rooms: HashSet<Room>,
 }
 
 impl ChatServer {
     pub fn new() -> ChatServer {
         ChatServer {
             sockets: HashMap::new(),
-            rooms: HashMap::new(),
+            rooms: generate_rooms(),
         }
+    }
+
+    pub fn get_room(&self, room_id: &String) -> Option<&Room> {
+        self.rooms.iter().find(|r| r.id == room_id.clone())
     }
 }
 
@@ -42,77 +47,99 @@ impl Handler<Join> for ChatServer {
     type Result = ();
 
     fn handle(&mut self, msg: Join, ctx: &mut Self::Context) {
-        log::info!("{:?} joined room {}", msg.id, msg.room);
+        let room = match self.get_room(&msg.room) {
+            Some(room) => room,
+            None => {
+                log::info!("Room {} not found", msg.room);
+                return;
+            }
+        };
 
-        self.rooms
-            .entry(msg.room.to_owned())
-            .or_insert(HashSet::new())
-            .insert(msg.id);
+        log::info!("Room {} found", room.id);
 
-        self.sockets.iter().for_each(|(id, addr)| {
-            log::info!("{:?}", id);
-        });
+        let mut room_sockets = &room.sockets;
 
-        log::info!("{:?}", self.sockets.len());
+        room_sockets.insert(msg.id);
 
-        self.rooms
-            .get_mut(&msg.room)
-            .unwrap()
-            .iter()
-            .for_each(|id| {
-                if !self.sockets.contains_key(id) {
-                    log::info!("{:?} is not connected", id);
-                    return;
-                }
+        log::info!("{:?} joined to room {}", msg.id, msg.room);
 
-                log::info!("{:?} sent to {}", msg.id, id);
+        room_sockets.iter().for_each(|socket| {
+            if !self.sockets.contains_key(socket) {
+                log::info!("Socket is not registered {} ", socket);
+                return;
+            }
 
-                self.sockets.get_mut(id).unwrap().do_send(message::Message(
+            log::info!("Socket is registered {}", socket);
+
+            self.sockets
+                .get_mut(socket)
+                .unwrap()
+                .do_send(message::Message(
                     json!({
                         "event": "userConnected",
                         "data": {
-                            "id": msg.id.to_string(),
+                            "id": msg.id,
                             "name": msg.name,
                         },
                     })
                     .to_string(),
                 ));
-            });
+        });
+    }
+}
+
+impl Handler<Leave> for ChatServer {
+    type Result = ();
+
+    fn handle(&mut self, msg: Leave, ctx: &mut Self::Context) {
+        // if !self.rooms.contains_key(&msg.room) {
+        //     return;
+        // }
+
+        // self.rooms.get_mut(&msg.room);
+
+        // return ();
     }
 }
 
 impl Handler<RoomMessage> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: RoomMessage, ctx: &mut Self::Context) -> Self::Result {
-        if !self.rooms.contains_key(&msg.room) {
-            log::info!("Room {} does not exist", msg.room);
-            return;
-        }
+    fn handle(&mut self, msg: RoomMessage, ctx: &mut Self::Context) {
+        let room = match self.get_room(&msg.room) {
+            Some(room) => room,
+            None => {
+                log::info!("Room {} not found", msg.room);
+                return;
+            }
+        };
 
-        self.rooms
-            .get_mut(&msg.room)
-            .unwrap()
-            .iter()
-            .for_each(|id| {
-                if !self.sockets.contains_key(id) {
-                    log::info!(" socket not found {:?}", id);
-                    return;
-                }
+        log::info!("Room {} found", room.id);
 
-                self.sockets.get_mut(id).unwrap().do_send(message::Message(
+        room.sockets.iter().for_each(|socket| {
+            if !self.sockets.contains_key(socket) {
+                log::info!("Socket is not registered {} ", socket);
+                return;
+            }
+
+            log::info!("Socket is registered {}", socket);
+
+            self.sockets
+                .get_mut(socket)
+                .unwrap()
+                .do_send(message::Message(
                     json!({
-                        "event": "roomMessage",
+                        "event": "message",
                         "data": {
-                            "id": msg.id.to_string(),
+                            "id": msg.id,
                             "name": msg.name,
-                            "msg": msg.msg,
+                            "message": msg.message,
                             "room": msg.room,
                         },
                     })
                     .to_string(),
                 ));
-            })
+        });
     }
 }
 
