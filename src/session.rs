@@ -2,7 +2,6 @@ use actix::prelude::*;
 use actix_web_actors::ws;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
-use uuid::{uuid, Uuid};
 
 use crate::message::{Connect, Disconnect, Join, Leave, Message, RoomMessage};
 use crate::server;
@@ -31,6 +30,7 @@ impl WsSession {
                 // Remove from server
                 session.server.do_send(Disconnect {
                     id: session.id.clone(),
+                    room: session.room.clone().unwrap_or("".to_string()),
                 });
 
                 // Stop actor
@@ -62,6 +62,12 @@ impl Actor for WsSession {
 
     fn stopped(&mut self, ctx: &mut Self::Context) {
         log::info!("Stopped");
+        self.server.do_send(Disconnect {
+            id: self.id.clone(),
+            room: self.room.clone().unwrap_or("".to_string()),
+        });
+
+        ctx.stop();
     }
 }
 

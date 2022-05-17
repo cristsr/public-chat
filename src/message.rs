@@ -1,9 +1,8 @@
 use actix::prelude::*;
-use std::collections::{BTreeSet, HashSet};
 
 /// New chat session is created
 #[derive(Message)]
-#[rtype(usize)]
+#[rtype(result = "()")]
 pub struct Connect {
     pub id: String,
     pub addr: Recipient<Message>,
@@ -33,7 +32,7 @@ pub struct Room {
     pub name: String,
     pub people: usize,
     pub id: String,
-    pub sockets: BTreeSet<String>,
+    pub sockets: Vec<String>,
 }
 
 /// Room Message
@@ -51,6 +50,7 @@ pub struct RoomMessage {
 #[rtype(result = "()")]
 pub struct Disconnect {
     pub id: String,
+    pub room: String,
 }
 
 /// Chat server sends this messages to session
