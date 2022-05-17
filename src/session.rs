@@ -146,7 +146,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 
                     "name" => {
                         let name = String::from(data.as_str().unwrap_or(""));
-                        self.name = Some(name);
+                        self.name = Some(name.clone());
 
                         ctx.text(json!({ "event": "name", "data": name }).to_string());
                     }
