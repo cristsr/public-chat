@@ -8,6 +8,12 @@ pub struct Connect {
     pub addr: Recipient<Message>,
 }
 
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Name {
+    pub name: String,
+}
+
 /// Join to room
 #[derive(Message)]
 #[rtype(result = "()")]
@@ -57,3 +63,5 @@ pub struct Disconnect {
 #[derive(Debug, Message)]
 #[rtype(result = "()")]
 pub struct Message(pub String);
+
+

@@ -116,7 +116,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 
                 match event {
                     "join" => {
-                        let room: String = String::from(data["room"].as_str().unwrap_or(""));
+                        let room: String = String::from(data.as_str().unwrap_or(""));
 
                         log::info!("{} join room {}", self.id, room);
 
@@ -144,8 +144,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         });
                     }
 
-                    "asdf" => {
-                        log::info!("asdf");
+                    "name" => {
+                        let name = String::from(data.as_str().unwrap_or(""));
+                        self.name = Some(name);
+
+                        ctx.text(json!({ "event": "name", "data": name }).to_string());
                     }
                     _ => {}
                 }

@@ -1,9 +1,6 @@
 use actix::{Actor, Addr};
 use actix_web::{middleware::Logger, web, App, Error, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
-use log::log;
-use std::sync::atomic::AtomicUsize;
-use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -12,7 +9,7 @@ mod message;
 mod server;
 mod session;
 
-async fn index(req: HttpRequest) -> impl Responder {
+async fn index() -> impl Responder {
     "Hello world!"
 }
 
