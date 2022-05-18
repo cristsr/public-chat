@@ -1,11 +1,14 @@
 FROM rust:1.31
 
-WORKDIR /app
+WORKDIR /usr/src/myapp
+
 COPY . .
 
 RUN cargo install --path .
 
 EXPOSE 8080
-CMD ["npm", "run", "start:prod"]
 
-CMD ["myapp"]
+CMD ["cargo", "run"]
+
+# docker build -t public-chat:latest .
+# docker run -d -p 8080:8080 public-chat:latest
