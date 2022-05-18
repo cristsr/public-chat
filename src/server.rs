@@ -2,7 +2,6 @@ use actix::prelude::*;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-use crate::message;
 use crate::message::{
     Connect, Disconnect, Join, Leave, Message, PrivateMessage, Room, RoomMessage,
 };
@@ -170,7 +169,7 @@ impl Handler<RoomMessage> for ChatServer {
                 return;
             }
 
-            self.sockets.get(socket).unwrap().do_send(message::Message(
+            self.sockets.get(socket).unwrap().do_send(Message(
                 object! {
                     event: "roomMessage",
                     data: {
@@ -252,7 +251,7 @@ impl Handler<Disconnect> for ChatServer {
                     return;
                 }
 
-                self.sockets.get(socket).unwrap().do_send(message::Message(
+                self.sockets.get(socket).unwrap().do_send(Message(
                     object! {
                         event: "leaveRoom",
                         data: {

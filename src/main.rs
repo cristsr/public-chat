@@ -6,7 +6,6 @@ use actix_web_actors::ws;
 use std::time::Instant;
 use uuid::Uuid;
 
-mod config;
 mod message;
 mod server;
 mod session;
