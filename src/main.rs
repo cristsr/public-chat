@@ -3,7 +3,6 @@ extern crate json;
 use actix::{Actor, Addr};
 use actix_web::{middleware::Logger, web, App, Error, HttpRequest, HttpServer, Responder};
 use actix_web_actors::ws;
-use parity_wordlist::random_phrase;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -25,7 +24,7 @@ async fn ws_route(
         id: Uuid::new_v4().to_string(),
         hb: Instant::now(),
         room: None,
-        name: random_phrase(1),
+        name: "".to_string(),
         server: srv.get_ref().clone(),
     };
 
