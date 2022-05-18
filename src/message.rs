@@ -1,4 +1,5 @@
 use actix::prelude::*;
+use std::collections::HashSet;
 
 /// New chat session is created
 #[derive(Message)]
@@ -32,13 +33,11 @@ pub struct Leave {
 }
 
 /// Room
-#[derive(Hash, Eq, PartialEq, Debug, Message)]
+#[derive(Debug, Message)]
 #[rtype(result = "()")]
 pub struct Room {
     pub name: String,
-    pub people: usize,
-    pub id: String,
-    pub sockets: Vec<String>,
+    pub sockets: HashSet<String>,
 }
 
 /// Room Message
@@ -56,12 +55,10 @@ pub struct RoomMessage {
 #[rtype(result = "()")]
 pub struct Disconnect {
     pub id: String,
-    pub room: String,
+    pub room: Option<String>,
 }
 
 /// Chat server sends this messages to session
 #[derive(Debug, Message)]
 #[rtype(result = "()")]
 pub struct Message(pub String);
-
-

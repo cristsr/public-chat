@@ -1,22 +1,42 @@
 use actix::prelude::*;
-use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
 
-use crate::config::generate_rooms;
 use crate::message;
-use crate::message::{Connect, Disconnect, Join, Leave, Room, RoomMessage};
+use crate::message::{Connect, Disconnect, Join, Leave, Message, Room, RoomMessage};
 
 #[derive(Debug)]
 pub struct ChatServer {
-    sockets: HashMap<String, Recipient<message::Message>>,
-    rooms: Vec<Room>,
+    sockets: HashMap<String, Recipient<Message>>,
+    rooms: HashMap<String, Room>,
 }
 
 impl ChatServer {
     pub fn new() -> ChatServer {
+        let mut rooms = HashMap::new();
+
+        // Add default rooms
+        [
+            "Amistad",
+            "Porno",
+            "Maduritas",
+            "Colombia",
+            "Latinos",
+        ]
+        .iter()
+        .for_each(|name| {
+            rooms.insert(
+                Uuid::new_v4().to_string(),
+                Room {
+                    name: String::from(name.clone()),
+                    sockets: HashSet::new(),
+                },
+            );
+        });
+
         ChatServer {
             sockets: HashMap::new(),
-            rooms: generate_rooms(),
+            rooms,
         }
     }
 }
@@ -28,31 +48,32 @@ impl Actor for ChatServer {
 impl Handler<Connect> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: Connect, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Connect, _: &mut Self::Context) {
         log::info!("New connection: {}", msg.id);
 
-        let rooms = self
-            .rooms
-            .iter()
-            .map(|room| {
-                json!({
-                    "name": room.name,
-                    "id": room.id,
-                    "people": room.people,
-                })
-                .to_string()
-            })
-            .collect::<Vec<String>>();
-
-        msg.addr.do_send(message::Message(
-            json!({
-                "event": "rooms",
-                "data": rooms,
-            })
-            .to_string(),
+        // Notify available rooms to socket
+        msg.addr.do_send(Message(
+            object! {
+                event: "rooms",
+                data: self
+                    .rooms
+                    .iter()
+                    .map(|(key, value)| {
+                        object! {
+                            id: key.clone(),
+                            name: value.name.clone(),
+                            people: value.sockets.len()
+                        }
+                    })
+                    .collect::<Vec<json::JsonValue>>(),
+            }
+            .dump(),
         ));
 
         self.sockets.insert(msg.id, msg.addr);
+
+        // Notify available rooms to new client
+        todo!("Notify available rooms to new client");
     }
 }
 
@@ -60,51 +81,39 @@ impl Handler<Join> for ChatServer {
     type Result = ();
 
     fn handle(&mut self, msg: Join, _: &mut Self::Context) {
-        let room: &mut Room = match self.rooms.iter_mut().find(|r| r.id == msg.room) {
-            Some(room) => room,
-            None => {
-                log::info!("Room {} not found", &msg.room);
-                return;
-            }
-        };
-
-        log::info!("Room {} found", &room.id);
-
-        if !room.sockets.contains(&msg.id) {
-            // Add socket to room
-            room.sockets.push(msg.id.clone());
+        // Verify if room exists
+        if !self.rooms.contains_key(&msg.room) {
+            log::error!("Room {} not found", msg.room);
+            return;
         }
 
-      
+        // Get room
+        let room = self.rooms.get_mut(&msg.room).unwrap();
 
-        log::info!("{:?} joined to room {}", &msg.id, &msg.room);
+        // Add client to room
+        room.sockets.insert(msg.id.clone());
 
+        // Notify room members
         room.sockets.iter().for_each(|socket| {
-            log::info!("Sending to {}", socket);
-
             if !self.sockets.contains_key(socket) {
-                log::info!("Socket is not registered {} ", socket);
+                log::error!("Socket {} not found", socket);
                 return;
             }
 
-            log::info!("Socket is registered {}", socket);
-
-            // Notify room about new user
-            self.sockets
-                .get_mut(socket)
-                .unwrap()
-                .do_send(message::Message(
-                    json!({
-                        "event": "userConnected",
-                        "data": {
-                            "id": msg.id,
-                            "name": msg.name,
-                            "room": msg.room,
-                        }
-                    })
-                    .to_string(),
-                ));
+            self.sockets.get(socket).unwrap().do_send(Message(
+                object! {
+                    event: "join",
+                    data: {
+                        id: msg.id.clone(),
+                        name: msg.name.clone(),
+                        room: msg.room.clone(),
+                    },
+                }
+                .dump(),
+            ));
         });
+
+        log::info!("Socket {} joined room {}", msg.id, msg.room);
     }
 }
 
@@ -112,43 +121,38 @@ impl Handler<Leave> for ChatServer {
     type Result = ();
 
     fn handle(&mut self, msg: Leave, _: &mut Self::Context) {
-        let room: &mut Room = match self.rooms.iter_mut().find(|r| r.id == msg.room) {
-            Some(room) => room,
-            None => {
-                log::info!("Room {} not found", &msg.room);
-                return;
-            }
-        };
+        // Verify if room exists
+        if !self.rooms.contains_key(&msg.room) {
+            log::error!("Room {} not found", msg.room);
+            return;
+        }
+
+        // Get room
+        let room = self.rooms.get_mut(&msg.room).unwrap();
 
         // Remove socket from room
         room.sockets.retain(|socket| socket != &msg.id);
 
         log::info!("{} left room {}", &msg.id, &msg.room);
 
+        // Notify room members
         room.sockets.iter().for_each(|socket| {
-            log::info!("Sending to {}", socket);
-
             if !self.sockets.contains_key(socket) {
-                log::info!("Socket is not registered {} ", socket);
+                log::error!("Socket {} not found", socket);
                 return;
             }
 
-            log::info!("Socket is registered {}", socket);
-
             // Notify room about user disconnect
-            self.sockets
-                .get_mut(socket)
-                .unwrap()
-                .do_send(message::Message(
-                    json!({
-                        "event": "leaveRoom",
-                        "data": {
-                            "id": msg.id,
-                            "room": msg.room,
-                        }
-                    })
-                    .to_string(),
-                ));
+            self.sockets.get(socket).unwrap().do_send(Message(
+                object! {
+                    event: "leaveRoom",
+                    data: {
+                        id: msg.id.clone(),
+                        room: msg.room.clone(),
+                    }
+                }
+                .dump(),
+            ));
         });
     }
 }
@@ -157,40 +161,34 @@ impl Handler<RoomMessage> for ChatServer {
     type Result = ();
 
     fn handle(&mut self, msg: RoomMessage, _: &mut Self::Context) {
-        let room: &mut Room = match self.rooms.iter_mut().find(|r| r.id == msg.room) {
-            Some(room) => room,
-            None => {
-                log::info!("Room {} not found", msg.room);
-                return;
-            }
-        };
+        // Verify if room exists
+        if !self.rooms.contains_key(&msg.room) {
+            log::error!("Room {} not found", msg.room);
+            return;
+        }
 
-        log::info!("Room {} found", room.id);
+        // Get room
+        let room = self.rooms.get(&msg.room).unwrap();
 
+        // Notify room members
         room.sockets.iter().for_each(|socket| {
             if !self.sockets.contains_key(socket) {
-                log::info!("Socket is not registered {} ", socket);
+                log::error!("Socket {} not found", socket);
                 return;
             }
 
-            log::info!("Socket is registered {}", &socket);
-
-            // Send message to all sockets in room
-            self.sockets
-                .get_mut(socket)
-                .unwrap()
-                .do_send(message::Message(
-                    json!({
-                        "event": "message",
-                        "data": {
-                            "id": msg.id,
-                            "name": msg.name,
-                            "message": msg.message,
-                            "room": msg.room,
-                        },
-                    })
-                    .to_string(),
-                ));
+            self.sockets.get(socket).unwrap().do_send(message::Message(
+                object! {
+                    event: "roomMessage",
+                    data: {
+                        id: msg.id.clone(),
+                        name: msg.name.clone(),
+                        message: msg.message.clone(),
+                        room: msg.room.clone(),
+                    },
+                }
+                .dump(),
+            ));
         });
     }
 }
@@ -198,43 +196,35 @@ impl Handler<RoomMessage> for ChatServer {
 impl Handler<Disconnect> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: Disconnect, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: Disconnect, _: &mut Self::Context) -> Self::Result {
         log::info!("Socket disconnect {}", msg.id);
 
-        match self.rooms.iter_mut().find(|r| r.id == msg.room) {
-            Some(room) => {
-                // Remove socket from room
-                room.sockets.retain(|socket| socket != &msg.id);
+        // Verify if room is defined
+        if let Some(r) = msg.room {
+            // Get room
+            let room = self.rooms.get_mut(&r).unwrap();
 
-                // Notify room user disconnected
-                room.sockets.iter().for_each(|socket| {
-                    log::info!("Sending to {}", socket);
+            // Remove socket from room
+            room.sockets.remove(&msg.id);
 
-                    if !self.sockets.contains_key(socket) {
-                        log::info!("Socket is not registered {} ", socket);
-                        return;
+            // Notify room members
+            room.sockets.iter().for_each(|socket| {
+                if !self.sockets.contains_key(socket) {
+                    log::error!("Socket {} not found", socket);
+                    return;
+                }
+
+                self.sockets.get(socket).unwrap().do_send(message::Message(
+                    object! {
+                        event: "leaveRoom",
+                        data: {
+                            id: msg.id.clone(),
+                            room: r.clone(),
+                        }
                     }
-
-                    log::info!("Socket is registered {}", socket);
-
-                    self.sockets
-                        .get_mut(socket)
-                        .unwrap()
-                        .do_send(message::Message(
-                            json!({
-                                 "event": "leaveRoom",
-                                 "data": {
-                                      "id": msg.id,
-                                      "room": room.id,
-                                 }
-                            })
-                            .to_string(),
-                        ));
-                });
-            }
-            None => {
-                log::info!("Room not found: {}", msg.id);
-            }
+                    .dump(),
+                ));
+            });
         }
     }
 }
