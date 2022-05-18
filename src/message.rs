@@ -50,6 +50,15 @@ pub struct RoomMessage {
     pub message: String,
 }
 
+/// Private Message
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct PrivateMessage {
+    pub emitter: String,
+    pub receiver: String,
+    pub message: String,
+}
+
 /// Session is disconnected
 #[derive(Message)]
 #[rtype(result = "()")]

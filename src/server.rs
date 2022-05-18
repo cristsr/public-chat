@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::message;
-use crate::message::{Connect, Disconnect, Join, Leave, Message, Room, RoomMessage};
+use crate::message::{
+    Connect, Disconnect, Join, Leave, Message, PrivateMessage, Room, RoomMessage,
+};
 
 #[derive(Debug)]
 pub struct ChatServer {
@@ -183,6 +185,49 @@ impl Handler<RoomMessage> for ChatServer {
         });
 
         log::info!("Message sent to room {}", msg.room);
+    }
+}
+
+impl Handler<PrivateMessage> for ChatServer {
+    type Result = ();
+
+    fn handle(&mut self, msg: PrivateMessage, _: &mut Self::Context) {
+        // Verify if emmiter is connected
+        if !self.sockets.contains_key(&msg.emitter) {
+            log::error!("Socket {} not found", msg.emitter);
+            return;
+        }
+
+        // Verify if receiver is connected
+        if !self.sockets.contains_key(&msg.receiver) {
+            log::error!("Socket {} not found", msg.receiver);
+            return;
+        }
+
+        let payload = object! {
+            event: "privateMessage",
+            data: {
+                emmiter: msg.emitter.clone(),
+                receiver: msg.receiver.clone(),
+                message: msg.message.clone(),
+            },
+        };
+
+        self.sockets
+            .get(&msg.emitter)
+            .unwrap()
+            .do_send(Message(payload.dump()));
+
+        self.sockets
+            .get(&msg.receiver)
+            .unwrap()
+            .do_send(Message(payload.dump()));
+
+        log::info!(
+            "Private message sent from {} to {}",
+            msg.emitter,
+            msg.receiver
+        );
     }
 }
 

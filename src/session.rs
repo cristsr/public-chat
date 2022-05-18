@@ -89,7 +89,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                     self.hb = Instant::now();
                 }
                 ws::Message::Text(text) => {
-                    log::info!("\n===================");
+                    log::info!("");
 
                     let value: json::JsonValue = json::parse(&text).unwrap();
 
@@ -121,13 +121,24 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                 message: data["message"].to_string(),
                             });
                         }
-                        "changeName" => {
-                            self.name = data.to_string();
-                            
+                        "privateMessage" => {
+                            self.server.do_send(RoomMessage {
+                                id: self.id.clone(),
+                                name: self.name.clone(),
+                                room: data["room"].to_string(),
+                                message: data["message"].to_string(),
+                            });
+                        }
+                        "profile" => {
+                            self.name = data["name"].to_string();
+
                             ctx.text(
                                 object! {
-                                   event: "changeName",
-                                   data: self.name.clone()
+                                   event: "profile",
+                                   data: {
+                                        name: self.name.clone(),
+                                        id: self.id.clone(),
+                                   }
                                 }
                                 .dump(),
                             );
