@@ -16,23 +16,17 @@ impl ChatServer {
         let mut rooms = HashMap::new();
 
         // Add default rooms
-        [
-            "Amistad",
-            "Porno",
-            "Maduritas",
-            "Colombia",
-            "Latinos",
-        ]
-        .iter()
-        .for_each(|name| {
-            rooms.insert(
-                Uuid::new_v4().to_string(),
-                Room {
-                    name: String::from(name.clone()),
-                    sockets: HashSet::new(),
-                },
-            );
-        });
+        ["Amistad", "Porno", "Maduritas", "Colombia", "Latinos"]
+            .iter()
+            .for_each(|name| {
+                rooms.insert(
+                    Uuid::new_v4().to_string(),
+                    Room {
+                        name: String::from(name.clone()),
+                        sockets: HashSet::new(),
+                    },
+                );
+            });
 
         ChatServer {
             sockets: HashMap::new(),
@@ -71,9 +65,6 @@ impl Handler<Connect> for ChatServer {
         ));
 
         self.sockets.insert(msg.id, msg.addr);
-
-        // Notify available rooms to new client
-        todo!("Notify available rooms to new client");
     }
 }
 
@@ -83,7 +74,7 @@ impl Handler<Join> for ChatServer {
     fn handle(&mut self, msg: Join, _: &mut Self::Context) {
         // Verify if room exists
         if !self.rooms.contains_key(&msg.room) {
-            log::error!("Room {} not found", msg.room);
+            log::error!("Room not found {}", msg.room);
             return;
         }
 
@@ -96,7 +87,7 @@ impl Handler<Join> for ChatServer {
         // Notify room members
         room.sockets.iter().for_each(|socket| {
             if !self.sockets.contains_key(socket) {
-                log::error!("Socket {} not found", socket);
+                log::error!("Socket not found {} ", socket);
                 return;
             }
 
@@ -190,6 +181,8 @@ impl Handler<RoomMessage> for ChatServer {
                 .dump(),
             ));
         });
+
+        log::info!("Message sent to room {}", msg.room);
     }
 }
 

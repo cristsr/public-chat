@@ -1,6 +1,5 @@
 use actix::prelude::*;
 use actix_web_actors::ws;
-use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
 use crate::message::{Connect, Disconnect, Join, Leave, Message, RoomMessage};
@@ -12,16 +11,14 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug)]
 pub struct WsSession {
     pub id: String,
-    pub name: Option<String>,
+    pub name: String,
     pub room: Option<String>,
     pub hb: Instant,
     pub server: Addr<server::ChatServer>,
 }
 
 impl WsSession {
-    /**
-     * Send ping to client every 5 seconds
-     */
+    /// Send ping to client every 5 seconds
     pub fn heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
         ctx.run_interval(HEARTBEAT_INTERVAL, |session, ctx| {
             if Instant::now().duration_since(session.hb) > CLIENT_TIMEOUT {
@@ -92,69 +89,64 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                     self.hb = Instant::now();
                 }
                 ws::Message::Text(text) => {
-                    // let json: MyObj = serde_json::from_slice::<MyObj>((&text).as_ref()).unwrap();
-                    // parse json
-                    let value: Value = match serde_json::from_str(&text) {
-                        Ok(value) => value,
-                        Err(e) => {
-                            log::error!("{}", e);
+                    log::info!("\n===================");
 
-                            ctx.text(
-                                json!({
-                                    "error": e.to_string()
-                                })
-                                .to_string(),
-                            );
-                            return;
-                        }
-                    };
+                    let value: json::JsonValue = json::parse(&text).unwrap();
 
                     let event: &str = value["event"].as_str().unwrap();
-                    let data: Value = value["data"].clone();
+                    let data: json::JsonValue = value["data"].clone();
+
+                    log::info!("Event: {}", event);
+                    log::info!("Data: {}", data);
 
                     match event {
-                        "join" => {
-                            let room: String = String::from(data.as_str().unwrap_or(""));
-
-                            log::info!("{} join room {}", self.id, room);
-
+                        "joinRoom" => {
                             self.server.do_send(Join {
                                 id: self.id.clone(),
-                                name: self.name.clone().unwrap_or("RandomName".to_string()),
-                                room: room.clone(),
+                                name: self.name.clone(),
+                                room: data.to_string(),
                             });
                         }
-                        "leave" => {
-                            let room = String::from(data.as_str().unwrap_or(""));
-                            let id = self.id.clone();
-
-                            self.server.do_send(Leave { id, room });
+                        "leaveRoom" => {
+                            self.server.do_send(Leave {
+                                id: self.id.clone(),
+                                room: data.to_string(),
+                            });
                         }
                         "roomMessage" => {
-                            let room = String::from(data["room"].as_str().unwrap_or(""));
-                            let message = String::from(data["msg"].as_str().unwrap_or(""));
-
                             self.server.do_send(RoomMessage {
                                 id: self.id.clone(),
-                                name: self.name.clone().unwrap_or(String::from("")),
-                                room,
-                                message,
+                                name: self.name.clone(),
+                                room: data["room"].to_string(),
+                                message: data["message"].to_string(),
                             });
                         }
-                        "name" => {
-                            let name = String::from(data.as_str().unwrap_or(""));
-                            self.name = Some(name.clone());
-
-                            ctx.text(json!({ "event": "name", "data": name }).to_string());
+                        "changeName" => {
+                            self.name = data.to_string();
+                            
+                            ctx.text(
+                                object! {
+                                   event: "changeName",
+                                   data: self.name.clone()
+                                }
+                                .dump(),
+                            );
                         }
                         _ => {}
                     }
-                    log::info!("event {} data {:?}", value["event"], value["data"]);
                 }
                 _ => {}
             },
             Err(e) => {
                 log::error!("{:?}", e);
+
+                ctx.text(
+                    object! {
+                        error: e.to_string()
+                    }
+                    .dump(),
+                );
+
                 ctx.stop();
                 return;
             }
