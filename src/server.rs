@@ -34,6 +34,26 @@ impl ChatServer {
             rooms,
         }
     }
+
+    fn notify_people_in_rooms(&self) {
+        let rooms = self.rooms
+            .iter()
+            .map(|(key, value)| {
+                object! {
+                    id: key.clone(),
+                    name: value.name.clone(),
+                    people: value.sockets.len()
+                }
+            })
+            .collect::<Vec<json::JsonValue>>();
+
+        self.sockets.iter().for_each(|(_id, socket)| {
+            socket.addr.do_send(Message(object! {
+                event: "rooms",
+                data: rooms.clone(),
+            }));
+        });
+    }
 }
 
 impl Actor for ChatServer {
@@ -75,7 +95,7 @@ impl Handler<Connect> for ChatServer {
 impl Handler<Join> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: Join, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Join, _: &mut Self::Context) {
         // Verify if room exists
         if !self.rooms.contains_key(&msg.room) {
             log::error!("Room not found {}", msg.room);
@@ -85,7 +105,7 @@ impl Handler<Join> for ChatServer {
         if !self.sockets.contains_key(&msg.id) {
             log::error!("Socket not found {}", msg.id);
             return;
-        }
+        }        
 
         // Get room
         let room = self.rooms.get_mut(&msg.room).unwrap();
@@ -116,17 +136,24 @@ impl Handler<Join> for ChatServer {
         // Add client to room
         room.sockets.insert(msg.id.clone());
 
+        // Get socket joined
+        let socket = self.sockets.get(&msg.id).unwrap();
+
         // Notify client users in room
-        self.sockets.get(&msg.id).unwrap().addr.do_send(Message(
-            object! {
+        socket
+            .addr
+            .do_send(Message(object! {
                 event: "usersInRoom",
                 data: {
                     room: msg.room.clone(),
                     users: users,
                 },
-            }
-        ));
+            }));
 
+        // Notify to all sockets
+        self.notify_people_in_rooms();
+
+        // Notify Room members
         log::info!("Socket {} joined room {}", msg.id, msg.room);
     }
 }
@@ -147,8 +174,6 @@ impl Handler<Leave> for ChatServer {
         // Remove socket from room
         room.sockets.retain(|socket| socket != &msg.id);
 
-        log::info!("{} left room {}", &msg.id, &msg.room);
-
         // Notify room about user disconnect
         room.sockets
             .iter()
@@ -163,6 +188,11 @@ impl Handler<Leave> for ChatServer {
                     }
                 }));
             });
+
+        // Notify to all sockets
+        self.notify_people_in_rooms();
+
+        log::info!("{} left room {}", &msg.id, &msg.room);
     }
 }
 
