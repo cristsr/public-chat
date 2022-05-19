@@ -2,8 +2,8 @@ use actix::prelude::*;
 use actix_web_actors::ws;
 use std::time::{Duration, Instant};
 
-use crate::message::{Connect, Disconnect, Join, Leave, Message, RoomMessage};
-use crate::server;
+use crate::message::{Connect, Disconnect, Join, Leave, Message, Profile, RoomMessage};
+use crate::server::ChatServer;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -11,10 +11,10 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug)]
 pub struct WsSession {
     pub id: String,
-    pub name: String,
+    pub name: Option<String>,
     pub room: Option<String>,
     pub hb: Instant,
-    pub server: Addr<server::ChatServer>,
+    pub server: Addr<ChatServer>,
 }
 
 impl WsSession {
@@ -53,6 +53,7 @@ impl Actor for WsSession {
 
         self.server.do_send(Connect {
             id: self.id.clone(),
+            name: self.name.clone().unwrap_or("".to_string()),
             addr: ctx.address().recipient(),
         });
     }
@@ -72,8 +73,7 @@ impl Handler<Message> for WsSession {
     type Result = ();
 
     fn handle(&mut self, msg: Message, ctx: &mut Self::Context) -> Self::Result {
-        log::info!("Message received {:?}", msg);
-        ctx.text(msg.0);
+        ctx.text(msg.0.dump());
     }
 }
 
@@ -91,7 +91,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                 ws::Message::Text(text) => {
                     log::info!("");
 
-                    let value: json::JsonValue = json::parse(&text).unwrap();
+                    let value: json::JsonValue = json::parse(&text).unwrap_or(json::Null);
+
+                    if value == json::Null {
+                        log::error!("Invalid message");
+                        return;
+                    }
 
                     let event: &str = value["event"].as_str().unwrap();
                     let data: json::JsonValue = value["data"].clone();
@@ -103,7 +108,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         "joinRoom" => {
                             self.server.do_send(Join {
                                 id: self.id.clone(),
-                                name: self.name.clone(),
+                                name: self.name.clone().unwrap_or("".to_string()),
                                 room: data.to_string(),
                             });
                         }
@@ -116,7 +121,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         "roomMessage" => {
                             self.server.do_send(RoomMessage {
                                 id: self.id.clone(),
-                                name: self.name.clone(),
+                                name: self.name.clone().unwrap_or("".to_string()),
                                 room: data["room"].to_string(),
                                 message: data["message"].to_string(),
                             });
@@ -124,24 +129,18 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         "privateMessage" => {
                             self.server.do_send(RoomMessage {
                                 id: self.id.clone(),
-                                name: self.name.clone(),
+                                name: self.name.clone().unwrap_or("".to_string()),
                                 room: data["room"].to_string(),
                                 message: data["message"].to_string(),
                             });
                         }
                         "profile" => {
-                            self.name = data["name"].to_string();
+                            self.name = Some(data["name"].to_string());
 
-                            ctx.text(
-                                object! {
-                                   event: "profile",
-                                   data: {
-                                        name: self.name.clone(),
-                                        id: self.id.clone(),
-                                   }
-                                }
-                                .dump(),
-                            );
+                            self.server.do_send(Profile {
+                                id: self.id.clone(),
+                                name: self.name.clone().unwrap(),
+                            });
                         }
                         _ => {}
                     }

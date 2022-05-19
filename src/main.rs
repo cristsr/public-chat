@@ -23,7 +23,7 @@ async fn ws_route(
         id: Uuid::new_v4().to_string(),
         hb: Instant::now(),
         room: None,
-        name: "".to_string(),
+        name: None,
         server: srv.get_ref().clone(),
     };
 

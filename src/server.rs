@@ -3,12 +3,12 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::message::{
-    Connect, Disconnect, Join, Leave, Message, PrivateMessage, Room, RoomMessage,
+    Connect, Disconnect, Join, Leave, Message, PrivateMessage, Profile, Room, RoomMessage, Socket,
 };
 
 #[derive(Debug)]
 pub struct ChatServer {
-    sockets: HashMap<String, Recipient<Message>>,
+    sockets: HashMap<String, Socket>,
     rooms: HashMap<String, Room>,
 }
 
@@ -47,63 +47,85 @@ impl Handler<Connect> for ChatServer {
         log::info!("New connection: {}", msg.id);
 
         // Notify available rooms to socket
-        msg.addr.do_send(Message(
-            object! {
-                event: "rooms",
-                data: self
-                    .rooms
-                    .iter()
-                    .map(|(key, value)| {
-                        object! {
-                            id: key.clone(),
-                            name: value.name.clone(),
-                            people: value.sockets.len()
-                        }
-                    })
-                    .collect::<Vec<json::JsonValue>>(),
-            }
-            .dump(),
-        ));
+        msg.addr.do_send(Message(object! {
+            event: "rooms",
+            data: self
+                .rooms
+                .iter()
+                .map(|(key, value)| {
+                    object! {
+                        id: key.clone(),
+                        name: value.name.clone(),
+                        people: value.sockets.len()
+                    }
+                })
+                .collect::<Vec<json::JsonValue>>(),
+        }));
 
-        self.sockets.insert(msg.id, msg.addr);
+        self.sockets.insert(
+            msg.id,
+            Socket {
+                name: msg.name,
+                addr: msg.addr,
+            },
+        );
     }
 }
 
 impl Handler<Join> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: Join, _: &mut Self::Context) {
+    fn handle(&mut self, msg: Join, ctx: &mut Self::Context) {
         // Verify if room exists
         if !self.rooms.contains_key(&msg.room) {
             log::error!("Room not found {}", msg.room);
             return;
         }
 
+        if !self.sockets.contains_key(&msg.id) {
+            log::error!("Socket not found {}", msg.id);
+            return;
+        }
+
         // Get room
         let room = self.rooms.get_mut(&msg.room).unwrap();
 
-        // Add client to room
-        room.sockets.insert(msg.id.clone());
-
         // Notify room members
-        room.sockets.iter().for_each(|socket| {
-            if !self.sockets.contains_key(socket) {
-                log::error!("Socket not found {} ", socket);
-                return;
-            }
-
-            self.sockets.get(socket).unwrap().do_send(Message(
-                object! {
-                    event: "join",
+        let users = room
+            .sockets
+            .iter()
+            .filter(|id| self.sockets.contains_key(*id))
+            .map(|id| (self.sockets.get(id).unwrap(), id))
+            .map(|(socket, id)| {
+                socket.addr.do_send(Message(object! {
+                    event: "userConnected",
                     data: {
                         id: msg.id.clone(),
                         name: msg.name.clone(),
                         room: msg.room.clone(),
                     },
+                }));
+
+                object! {
+                    id: id.clone(),
+                    name: socket.name.clone(),
                 }
-                .dump(),
-            ));
-        });
+            })
+            .collect::<Vec<json::JsonValue>>();
+
+        // Add client to room
+        room.sockets.insert(msg.id.clone());
+
+        // Notify client users in room
+        self.sockets.get(&msg.id).unwrap().addr.do_send(Message(
+            object! {
+                event: "usersInRoom",
+                data: {
+                    room: msg.room.clone(),
+                    users: users,
+                },
+            }
+        ));
 
         log::info!("Socket {} joined room {}", msg.id, msg.room);
     }
@@ -127,25 +149,20 @@ impl Handler<Leave> for ChatServer {
 
         log::info!("{} left room {}", &msg.id, &msg.room);
 
-        // Notify room members
-        room.sockets.iter().for_each(|socket| {
-            if !self.sockets.contains_key(socket) {
-                log::error!("Socket {} not found", socket);
-                return;
-            }
-
-            // Notify room about user disconnect
-            self.sockets.get(socket).unwrap().do_send(Message(
-                object! {
+        // Notify room about user disconnect
+        room.sockets
+            .iter()
+            .filter(|id| self.sockets.contains_key(*id))
+            .map(|id| self.sockets.get(id).unwrap())
+            .for_each(|socket| {
+                socket.addr.do_send(Message(object! {
                     event: "leaveRoom",
                     data: {
                         id: msg.id.clone(),
                         room: msg.room.clone(),
                     }
-                }
-                .dump(),
-            ));
-        });
+                }));
+            });
     }
 }
 
@@ -169,8 +186,11 @@ impl Handler<RoomMessage> for ChatServer {
                 return;
             }
 
-            self.sockets.get(socket).unwrap().do_send(Message(
-                object! {
+            self.sockets
+                .get(socket)
+                .unwrap()
+                .addr
+                .do_send(Message(object! {
                     event: "roomMessage",
                     data: {
                         id: msg.id.clone(),
@@ -178,9 +198,7 @@ impl Handler<RoomMessage> for ChatServer {
                         message: msg.message.clone(),
                         room: msg.room.clone(),
                     },
-                }
-                .dump(),
-            ));
+                }));
         });
 
         log::info!("Message sent to room {}", msg.room);
@@ -215,18 +233,47 @@ impl Handler<PrivateMessage> for ChatServer {
         self.sockets
             .get(&msg.emitter)
             .unwrap()
-            .do_send(Message(payload.dump()));
+            .addr
+            .do_send(Message(payload.clone()));
 
         self.sockets
             .get(&msg.receiver)
             .unwrap()
-            .do_send(Message(payload.dump()));
+            .addr
+            .do_send(Message(payload.clone()));
 
         log::info!(
             "Private message sent from {} to {}",
             msg.emitter,
             msg.receiver
         );
+    }
+}
+
+impl Handler<Profile> for ChatServer {
+    type Result = ();
+
+    fn handle(&mut self, msg: Profile, _: &mut Self::Context) -> Self::Result {
+        // Verify if socket is connected
+        if !self.sockets.contains_key(&msg.id) {
+            log::error!("Socket {} not found", msg.id);
+            return;
+        }
+
+        // Get socket
+        let socket = self.sockets.get_mut(&msg.id).unwrap();
+
+        // Update socket name
+        socket.name = msg.name;
+
+        // Notify user profile
+        socket.addr.do_send(Message(object! {
+            event: "profile",
+            data: {
+                id: msg.id.clone(),
+                name: socket.name.clone(),
+            },
+        }));
     }
 }
 
@@ -251,17 +298,21 @@ impl Handler<Disconnect> for ChatServer {
                     return;
                 }
 
-                self.sockets.get(socket).unwrap().do_send(Message(
-                    object! {
+                self.sockets
+                    .get(socket)
+                    .unwrap()
+                    .addr
+                    .do_send(Message(object! {
                         event: "leaveRoom",
                         data: {
                             id: msg.id.clone(),
                             room: r.clone(),
                         }
-                    }
-                    .dump(),
-                ));
+                    }));
             });
         }
+
+        // Remove socket from server
+        self.sockets.remove(&msg.id);
     }
 }
