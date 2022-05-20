@@ -106,10 +106,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 
                     match event {
                         "joinRoom" => {
+                            self.room = Some(data.to_string());
+
                             self.server.do_send(Join {
                                 id: self.id.clone(),
                                 name: self.name.clone().unwrap_or("".to_string()),
-                                room: data.to_string(),
+                                room: self.room.clone().unwrap(),
                             });
                         }
                         "leaveRoom" => {
