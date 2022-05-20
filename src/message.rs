@@ -2,7 +2,7 @@ use actix::prelude::*;
 use std::collections::HashSet;
 
 /// Chat server sends this messages to session
-#[derive(Debug, Message)]
+#[derive(Message)]
 #[rtype(result = "()")]
 pub struct Message(pub json::JsonValue);
 
@@ -13,12 +13,6 @@ pub struct Connect {
     pub id: String,
     pub name: String,
     pub addr: Recipient<Message>,
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Name {
-    pub name: String,
 }
 
 /// Join to room
@@ -39,8 +33,7 @@ pub struct Leave {
 }
 
 /// Room
-#[derive(Debug, Message)]
-#[rtype(result = "()")]
+#[derive(Debug)]
 pub struct Room {
     pub name: String,
     pub sockets: HashSet<String>,
@@ -82,8 +75,7 @@ pub struct Profile {
 }
 
 /// Socket
-#[derive(Debug, Message)]
-#[rtype(result = "()")]
+#[derive(Debug)]
 pub struct Socket {
     pub name: String,
     pub addr: Recipient<Message>,
