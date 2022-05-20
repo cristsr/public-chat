@@ -39,6 +39,7 @@ async fn main() -> std::io::Result<()> {
     log::info!("Starting server...");
 
     let chat_server = server::ChatServer::new().start();
+
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(chat_server.clone()))
@@ -46,7 +47,6 @@ async fn main() -> std::io::Result<()> {
             .route("/ws", web::get().to(ws_route))
             .wrap(Logger::default())
     })
-    .workers(2)
     .bind(("0.0.0.0", 8080))?
     .run()
     .await

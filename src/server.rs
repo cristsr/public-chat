@@ -36,7 +36,8 @@ impl ChatServer {
     }
 
     fn notify_people_in_rooms(&self) {
-        let rooms = self.rooms
+        let rooms = self
+            .rooms
             .iter()
             .map(|(key, value)| {
                 object! {
@@ -105,7 +106,7 @@ impl Handler<Join> for ChatServer {
         if !self.sockets.contains_key(&msg.id) {
             log::error!("Socket not found {}", msg.id);
             return;
-        }        
+        }
 
         // Get room
         let room = self.rooms.get_mut(&msg.room).unwrap();
@@ -140,15 +141,13 @@ impl Handler<Join> for ChatServer {
         let socket = self.sockets.get(&msg.id).unwrap();
 
         // Notify client users in room
-        socket
-            .addr
-            .do_send(Message(object! {
-                event: "usersInRoom",
-                data: {
-                    room: msg.room.clone(),
-                    users: users,
-                },
-            }));
+        socket.addr.do_send(Message(object! {
+            event: "usersInRoom",
+            data: {
+                room: msg.room.clone(),
+                users: users,
+            },
+        }));
 
         // Notify to all sockets
         self.notify_people_in_rooms();
