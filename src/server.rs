@@ -84,10 +84,10 @@ impl Handler<Connect> for ChatServer {
         }));
 
         self.sockets.insert(
-            msg.id,
+            msg.id.clone(),
             Socket {
-                name: msg.name,
-                addr: msg.addr,
+                name: msg.name.clone(),
+                addr: msg.addr.clone(),
             },
         );
     }
