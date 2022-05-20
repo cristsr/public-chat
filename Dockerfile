@@ -1,14 +1,18 @@
-FROM rust:1.31
+FROM rust:latest as builder
 
-WORKDIR /usr/src/myapp
+WORKDIR /app/
 
 COPY . .
 
-RUN cargo install --path .
+RUN cargo build --release
+
+FROM debian:buster-slim as server
+
+COPY --from=builder /app/target/release/server /usr/local/bin/server
 
 EXPOSE 8080
 
-CMD ["cargo", "run"]
+CMD ["server"]
 
 # docker build -t public-chat:latest .
 # docker run -d -p 8080:8080 public-chat:latest
