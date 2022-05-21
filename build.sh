@@ -14,4 +14,4 @@ docker rm public-chat
 
 echo "Run the new server"
 
-docker run -d -p 8080:8080 --name public-chat public-chat:latest
+docker run -d -p 8080:8080 --name public-chat cristian44/public-chat:latest
