@@ -108,6 +108,11 @@ impl Handler<Join> for ChatServer {
             return;
         }
 
+        if self.rooms.get(&msg.room).unwrap().sockets.contains(&msg.id) {
+            log::error!("Socket already in room {}", msg.room);
+            return;
+        }
+
         // Get room
         let room = self.rooms.get_mut(&msg.room).unwrap();
 
@@ -314,6 +319,12 @@ impl Handler<Disconnect> for ChatServer {
 
         // Verify if room is defined
         if let Some(r) = msg.room {
+
+            if !self.rooms.contains_key(&r) {
+                log::error!("Room {} not assigned", r);
+                return;
+            }
+
             // Get room
             let room = self.rooms.get_mut(&r).unwrap();
 

@@ -115,6 +115,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             });
                         }
                         "leaveRoom" => {
+                            self.room = None;
+
                             self.server.do_send(Leave {
                                 id: self.id.clone(),
                                 room: data.to_string(),
