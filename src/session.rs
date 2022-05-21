@@ -132,7 +132,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         }
                         "privateMessage" => {
                             self.server.do_send(PrivateMessage {
-                                emitter: data["emitter"].to_string(),
+                                emitter: data["emmiter"].to_string(),
                                 receiver: data["receiver"].to_string(),
                                 message: data["message"].to_string(),
                             });
