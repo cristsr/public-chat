@@ -63,7 +63,6 @@ pub struct PrivateMessage {
 #[rtype(result = "()")]
 pub struct Disconnect {
     pub id: String,
-    pub room: Option<String>,
 }
 
 /// Profile

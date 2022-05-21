@@ -65,7 +65,7 @@ impl Handler<Connect> for ChatServer {
     type Result = ();
 
     fn handle(&mut self, msg: Connect, _: &mut Self::Context) {
-        log::info!("New connection: {}", msg.id);
+        log::info!("New connection: {}", &msg.id);
 
         // Notify available rooms to socket
         msg.addr.do_send(Message(object! {
@@ -86,8 +86,8 @@ impl Handler<Connect> for ChatServer {
         self.sockets.insert(
             msg.id.clone(),
             Socket {
-                name: msg.name.clone(),
-                addr: msg.addr.clone(),
+                name: msg.name,
+                addr: msg.addr,
             },
         );
     }
@@ -99,17 +99,19 @@ impl Handler<Join> for ChatServer {
     fn handle(&mut self, msg: Join, _: &mut Self::Context) {
         // Verify if room exists
         if !self.rooms.contains_key(&msg.room) {
-            log::error!("Room not found {}", msg.room);
+            log::warn!("Room not found {}", msg.room);
             return;
         }
 
+        // Verify if socket is connected
         if !self.sockets.contains_key(&msg.id) {
-            log::error!("Socket not found {}", msg.id);
+            log::warn!("Socket not found {}", msg.id);
             return;
         }
 
+        // Verify if socket is already in room
         if self.rooms.get(&msg.room).unwrap().sockets.contains(&msg.id) {
-            log::error!("Socket already in room {}", msg.room);
+            log::warn!("Socket already in room {}", msg.room);
             return;
         }
 
@@ -168,7 +170,7 @@ impl Handler<Leave> for ChatServer {
     fn handle(&mut self, msg: Leave, _: &mut Self::Context) {
         // Verify if room exists
         if !self.rooms.contains_key(&msg.room) {
-            log::error!("Room {} not found", msg.room);
+            log::warn!("Room not found {}", msg.room);
             return;
         }
 
@@ -176,7 +178,7 @@ impl Handler<Leave> for ChatServer {
         let room = self.rooms.get_mut(&msg.room).unwrap();
 
         // Remove socket from room
-        room.sockets.retain(|socket| socket != &msg.id);
+        room.sockets.remove(&msg.id);
 
         // Notify room about user disconnect
         room.sockets
@@ -206,7 +208,7 @@ impl Handler<RoomMessage> for ChatServer {
     fn handle(&mut self, msg: RoomMessage, _: &mut Self::Context) {
         // Verify if room exists
         if !self.rooms.contains_key(&msg.room) {
-            log::error!("Room {} not found", msg.room);
+            log::warn!("Room not found {}", msg.room);
             return;
         }
 
@@ -214,17 +216,12 @@ impl Handler<RoomMessage> for ChatServer {
         let room = self.rooms.get(&msg.room).unwrap();
 
         // Notify room members
-        room.sockets.iter().for_each(|socket| {
-            if !self.sockets.contains_key(socket) {
-                log::error!("Socket {} not found", socket);
-                return;
-            }
-
-            self.sockets
-                .get(socket)
-                .unwrap()
-                .addr
-                .do_send(Message(object! {
+        room.sockets
+            .iter()
+            .filter(|id| self.sockets.contains_key(*id))
+            .map(|id| self.sockets.get(id).unwrap())
+            .for_each(|socket| {
+                socket.addr.do_send(Message(object! {
                     event: "roomMessage",
                     data: {
                         id: msg.id.clone(),
@@ -233,7 +230,7 @@ impl Handler<RoomMessage> for ChatServer {
                         room: msg.room.clone(),
                     },
                 }));
-        });
+            });
 
         log::info!("Message sent to room {}", msg.room);
     }
@@ -245,36 +242,36 @@ impl Handler<PrivateMessage> for ChatServer {
     fn handle(&mut self, msg: PrivateMessage, _: &mut Self::Context) {
         // Verify if emmiter is connected
         if !self.sockets.contains_key(&msg.emitter) {
-            log::error!("Socket {} not found", msg.emitter);
+            log::warn!("Socket not found {}", msg.emitter);
             return;
         }
 
         // Verify if receiver is connected
         if !self.sockets.contains_key(&msg.receiver) {
-            log::error!("Socket {} not found", msg.receiver);
+            log::warn!("Socket not found {}", msg.receiver);
             return;
         }
+
+        let emmiter = self.sockets.get(&msg.emitter).unwrap();
+        let receiver = self.sockets.get(&msg.receiver).unwrap();
 
         let payload = object! {
             event: "privateMessage",
             data: {
-                emmiter: msg.emitter.clone(),
-                receiver: msg.receiver.clone(),
+                emmiter: {
+                    id: msg.emitter.clone(),
+                    name: emmiter.name.clone(),
+                },
+                receiver: {
+                    id: msg.receiver.clone(),
+                    name: receiver.name.clone(),
+                },
                 message: msg.message.clone(),
             },
         };
 
-        self.sockets
-            .get(&msg.emitter)
-            .unwrap()
-            .addr
-            .do_send(Message(payload.clone()));
-
-        self.sockets
-            .get(&msg.receiver)
-            .unwrap()
-            .addr
-            .do_send(Message(payload.clone()));
+        emmiter.addr.do_send(Message(payload.clone()));
+        receiver.addr.do_send(Message(payload.clone()));
 
         log::info!(
             "Private message sent from {} to {}",
@@ -290,7 +287,7 @@ impl Handler<Profile> for ChatServer {
     fn handle(&mut self, msg: Profile, _: &mut Self::Context) -> Self::Result {
         // Verify if socket is connected
         if !self.sockets.contains_key(&msg.id) {
-            log::error!("Socket {} not found", msg.id);
+            log::warn!("Socket {} not found", msg.id);
             return;
         }
 
@@ -316,41 +313,6 @@ impl Handler<Disconnect> for ChatServer {
 
     fn handle(&mut self, msg: Disconnect, _: &mut Self::Context) -> Self::Result {
         log::info!("Socket disconnect {}", msg.id);
-
-        // Verify if room is defined
-        if let Some(r) = msg.room {
-
-            if !self.rooms.contains_key(&r) {
-                log::error!("Room {} not assigned", r);
-                return;
-            }
-
-            // Get room
-            let room = self.rooms.get_mut(&r).unwrap();
-
-            // Remove socket from room
-            room.sockets.remove(&msg.id);
-
-            // Notify room members
-            room.sockets.iter().for_each(|socket| {
-                if !self.sockets.contains_key(socket) {
-                    log::error!("Socket {} not found", socket);
-                    return;
-                }
-
-                self.sockets
-                    .get(socket)
-                    .unwrap()
-                    .addr
-                    .do_send(Message(object! {
-                        event: "leaveRoom",
-                        data: {
-                            id: msg.id.clone(),
-                            room: r.clone(),
-                        }
-                    }));
-            });
-        }
 
         // Remove socket from server
         self.sockets.remove(&msg.id);
