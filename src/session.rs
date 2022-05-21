@@ -2,7 +2,7 @@ use actix::prelude::*;
 use actix_web_actors::ws;
 use std::time::{Duration, Instant};
 
-use crate::message::{Connect, Disconnect, Join, Leave, Message, Profile, RoomMessage};
+use crate::message::{Connect, Disconnect, Join, Leave, Message, Profile, PrivateMessage, RoomMessage};
 use crate::server::ChatServer;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -131,10 +131,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             });
                         }
                         "privateMessage" => {
-                            self.server.do_send(RoomMessage {
-                                id: self.id.clone(),
-                                name: self.name.clone().unwrap_or("".to_string()),
-                                room: data["room"].to_string(),
+                            self.server.do_send(PrivateMessage {
+                                emitter: data["emitter"].to_string(),
+                                receiver: data["receiver"].to_string(),
                                 message: data["message"].to_string(),
                             });
                         }
