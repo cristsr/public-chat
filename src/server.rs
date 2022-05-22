@@ -17,7 +17,7 @@ impl ChatServer {
         let mut rooms = HashMap::new();
 
         // Add default rooms
-        ["Amistad", "Porno", "Maduritas", "Colombia", "Latinos"]
+        ["Amistad", "Videojuegos", "Anime", "Colombia", "Latinoamerica"]
             .iter()
             .for_each(|name| {
                 rooms.insert(
