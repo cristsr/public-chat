@@ -10,7 +10,7 @@ FROM debian:buster-slim as server
 
 COPY --from=builder /app/target/release/server /usr/local/bin/server
 
-EXPOSE 8080
+EXPOSE 3000
 
 CMD ["server"]
 
