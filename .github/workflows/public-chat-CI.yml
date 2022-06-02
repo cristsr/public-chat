@@ -8,6 +8,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  APP_PORT: ${{ secrets.APP_PORT }}
 
 jobs:
   build:
@@ -31,3 +32,30 @@ jobs:
       - name: Docker logout
         run: |
           docker logout
+
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Deploy container
+        uses: appleboy/ssh-action@v0.1.2
+        with:
+          host: ${{secrets.SSH_HOST}}
+          key: ${{secrets.SSH_KEY}}
+          username: ${{ secrets.SSH_USER }}
+
+          script: |
+            echo "Pulling latest image"
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            
+            echo "Stopping container"
+            docker stop ${{ env.IMAGE_NAME }}
+            
+            echo "Removing container"
+            docker rm ${{ env.IMAGE_NAME }}
+            
+            echo "Run container"
+            docker run -it -d --name ${{ env.IMAGE_NAME }} -p {{ env.APP_PORT }}:3000 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            
+            echo "Done"
