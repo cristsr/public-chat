@@ -11,7 +11,7 @@ mod server;
 mod session;
 
 async fn index() -> impl Responder {
-    "Hello world!"
+    "Hello world! 😎"
 }
 
 async fn ws_route(
