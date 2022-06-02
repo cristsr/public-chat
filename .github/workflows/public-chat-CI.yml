@@ -34,6 +34,7 @@ jobs:
           docker logout
 
   deploy:
+    needs: [build]
     runs-on: ubuntu-latest
     environment: development
     steps:
