@@ -9,6 +9,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   APP_PORT: ${{ secrets.APP_PORT }}
+  CONTAINER_NAME: public-chat
 
 jobs:
   build:
@@ -44,7 +45,7 @@ jobs:
           host: ${{secrets.SSH_HOST}}
           key: ${{secrets.SSH_KEY}}
           username: ${{ secrets.SSH_USER }}
-          envs: REGISTRY,IMAGE_NAME,APP_PORT
+          envs: REGISTRY,IMAGE_NAME,CONTAINER_NAME,APP_PORT
           script: |
             echo "Login to registry"
             docker login $REGISTRY -u $REGISTRY_USER -p $REGISTRY_TOKEN
@@ -53,13 +54,13 @@ jobs:
             docker pull $REGISTRY/$IMAGE_NAME
             
             echo "Stopping container"
-            docker stop $IMAGE_NAME
+            docker stop $CONTAINER_NAME
             
             echo "Removing container"
-            docker rm $IMAGE_NAME
+            docker rm $CONTAINER_NAME
             
             echo "Run container"
-            docker run -it -d --name $IMAGE_NAME -p $APP_PORT:3000 $REGISTRY/$IMAGE_NAME
+            docker run -it -d --name $CONTAINER_NAME -p $APP_PORT:3000 $REGISTRY/$IMAGE_NAME
             
             docker logout
             
