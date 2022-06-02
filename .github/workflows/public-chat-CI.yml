@@ -35,6 +35,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
+    environment: development
     steps:
       - name: Deploy container
         uses: appleboy/ssh-action@v0.1.2
@@ -54,6 +55,6 @@ jobs:
             docker rm ${{ env.IMAGE_NAME }}
             
             echo "Run container"
-            docker run -it -d --name ${{ env.IMAGE_NAME }} -p {{ env.APP_POR }}:3000 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            docker run -it -d --name ${{ env.IMAGE_NAME }} -p {{ env.APP_PORT }}:3000 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             
             echo "Done"
