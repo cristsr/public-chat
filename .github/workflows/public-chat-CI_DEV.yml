@@ -3,7 +3,7 @@ name: public-chat-CI_DEV
 on:
   pull_request:
     branches:
-      - develop
+      - master
 
 env:
   REGISTRY: ghcr.io
