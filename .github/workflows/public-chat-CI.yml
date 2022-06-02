@@ -1,4 +1,4 @@
-name: public-chat-CI_DEV
+name: public-chat-CI
 
 on:
   pull_request:
