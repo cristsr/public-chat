@@ -44,8 +44,10 @@ jobs:
           host: ${{secrets.SSH_HOST}}
           key: ${{secrets.SSH_KEY}}
           username: ${{ secrets.SSH_USER }}
-
           script: |
+            echo "Login to registry"
+            docker login ${{ env.REGISTRY }} -u ${{ secrets.REGISTRY_USER }} -p ${{ secrets.REGISTRY_TOKEN }}
+            
             echo "Pulling latest image"
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             
@@ -59,3 +61,6 @@ jobs:
             docker run -it -d --name ${{ env.IMAGE_NAME }} -p ${{ env.APP_PORT }}:3000 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             
             echo "Done"
+
+      - name: Docker logout
+
